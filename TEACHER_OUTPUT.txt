@@ -1,0 +1,93 @@
+  Teacher Model Output (USTGCN.py)
+
+Run Context:
+- Device: cuda:0
+- Dataset: PeMSD7
+- Predicting After: 15 minutes
+
+Raw Output:
+/content/trafic-forcasting/USTGCN.py:298: UserWarning: Creating a tensor from a list of numpy.ndarrays is extremely slow. Please consider converting the list to a single numpy.ndarray with numpy.array() before converting to a tensor. (Triggered internally at /pytorch/torch/csrc/utils/tensor_new.cpp:253.)
+  self.train_data = torch.FloatTensor(self.train_data).to(device)
+Running Trained Model...
+Epoch:  1  running...
+Train avg loss:  tensor(0.8801, device='cuda:0')
+Average Test Loss:  tensor(0.8339, device='cuda:0')
+Epoch: 1
+RMSE:  13.788318634033203
+MAE:  12.210786624237675
+MAPE:  21.314181836492207
+===============================================
+Min RMSE:  13.788318634033203
+Min MAE:  12.210786624237675
+Min MAPE:  21.314181836492207
+===============================================
+Epoch:  2  running...
+Train avg loss:  tensor(0.3027, device='cuda:0')
+Average Test Loss:  tensor(0.1646, device='cuda:0')
+Epoch: 2
+RMSE:  6.1265411376953125
+MAE:  4.638792346622476
+MAPE:  9.386584717939261
+===============================================
+Min RMSE:  6.1265411376953125
+Min MAE:  4.638792346622476
+Min MAPE:  9.386584717939261
+===============================================
+Epoch:  3  running...
+Train avg loss:  tensor(0.2495, device='cuda:0')
+Average Test Loss:  tensor(0.1499, device='cuda:0')
+Epoch: 3
+RMSE:  5.846523284912109
+MAE:  4.4316086286586165
+MAPE:  8.878228969930804
+===============================================
+Min RMSE:  5.846523284912109
+Min MAE:  4.4316086286586165
+Min MAPE:  8.878228969930804
+===============================================
+Epoch:  4  running...
+Train avg loss:  tensor(0.2322, device='cuda:0')
+Average Test Loss:  tensor(0.1859, device='cuda:0')
+Epoch: 4
+RMSE:  6.510985851287842
+MAE:  5.115580370891341
+MAPE:  9.672651757901919
+===============================================
+Min RMSE:  5.846523284912109
+Min MAE:  4.4316086286586165
+Min MAPE:  8.878228969930804
+===============================================
+
+Structured Summary:
+Epoch 1:
+- Train Loss: 0.8801
+- Test Loss: 0.8339
+- RMSE: 13.7883
+- MAE: 12.2108
+- MAPE: 21.3142
+
+Epoch 2:
+- Train Loss: 0.3027
+- Test Loss: 0.1646
+- RMSE: 6.1265
+- MAE: 4.6388
+- MAPE: 9.3866
+
+Epoch 3:
+- Train Loss: 0.2495
+- Test Loss: 0.1499
+- RMSE: 5.8465
+- MAE: 4.4316
+- MAPE: 8.8782
+
+Epoch 4:
+- Train Loss: 0.2322
+- Test Loss: 0.1859
+- RMSE: 6.5110
+- MAE: 5.1156
+- MAPE: 9.6727
+
+Best Epoch (by RMSE/MAE/MAPE): Epoch 3
+- RMSE: 5.8465
+- MAE: 4.4316
+- MAPE: 8.8782

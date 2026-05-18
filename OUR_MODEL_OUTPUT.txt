@@ -1,0 +1,105 @@
+Our Model Output (USTGCN_GAT.py)
+
+Run Context:
+- Device: cuda:0
+- Dataset: PeMSD7
+- Predicting After: 15 minutes
+
+Raw Output:
+DEVICE: cuda:0
+Traffic Forecasting GNN with Historical and Current Model
+Loading Data...
+Data Loaded
+Dataset:  PeMSD7
+Total Nodes:  228
+Train timestamps:  4320
+Test timestamps:  4306
+Predicting After:  15 minutes
+Training Model...
+Epoch:  1  running...
+Train avg loss:  tensor(0.3911, device='cuda:0')
+Average Test Loss:  tensor(0.0691, device='cuda:0')
+Epoch: 1
+RMSE:  3.968024492263794
+MAE:  2.7285080869056237
+MAPE:  5.872435703522843
+===============================================
+Min RMSE:  3.968024492263794
+Min MAE:  2.7285080869056237
+Min MAPE:  5.872435703522843
+===============================================
+Epoch:  2  running...
+Train avg loss:  tensor(0.1974, device='cuda:0')
+Average Test Loss:  tensor(0.0560, device='cuda:0')
+Epoch: 2
+RMSE:  3.5739147663116455
+MAE:  2.075802454166164
+MAPE:  4.84533269559361
+===============================================
+Min RMSE:  3.5739147663116455
+Min MAE:  2.075802454166164
+Min MAPE:  4.84533269559361
+===============================================
+Epoch:  3  running...
+Train avg loss:  tensor(0.1792, device='cuda:0')
+Average Test Loss:  tensor(0.0548, device='cuda:0')
+Epoch: 3
+RMSE:  3.5350890159606934
+MAE:  1.9986552393894472
+MAPE:  4.789987924080022
+===============================================
+Min RMSE:  3.5350890159606934
+Min MAE:  1.9986552393894472
+Min MAPE:  4.789987924080022
+===============================================
+Epoch:  4  running...
+Train avg loss:  tensor(0.1614, device='cuda:0')
+Average Test Loss:  tensor(0.0577, device='cuda:0')
+Epoch: 4
+RMSE:  3.625702381134033
+MAE:  2.3061488366919374
+MAPE:  5.1210667322150005
+===============================================
+Min RMSE:  3.5350890159606934
+Min MAE:  1.9986552393894472
+Min MAPE:  4.789987924080022
+===============================================
+Epoch:  5  running...
+
+Structured Summary:
+Epoch 1:
+- Train Loss: 0.3911
+- Test Loss: 0.0691
+- RMSE: 3.9680
+- MAE: 2.7285
+- MAPE: 5.8724
+
+Epoch 2:
+- Train Loss: 0.1974
+- Test Loss: 0.0560
+- RMSE: 3.5739
+- MAE: 2.0758
+- MAPE: 4.8453
+
+Epoch 3:
+- Train Loss: 0.1792
+- Test Loss: 0.0548
+- RMSE: 3.5351
+- MAE: 1.9987
+- MAPE: 4.7900
+
+Epoch 4:
+- Train Loss: 0.1614
+- Test Loss: 0.0577
+- RMSE: 3.6257
+- MAE: 2.3061
+- MAPE: 5.1211
+
+Best Epoch So Far: Epoch 3
+- RMSE: 3.5351
+- MAE: 1.9987
+- MAPE: 4.7900
+
+Observation:
+- Performance improved up to epoch 3, then slightly degraded at epoch 4.
+- This suggests early overfitting beyond epoch 3 for this run.
