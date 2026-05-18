@@ -148,27 +148,15 @@ class DataCenter(object):
 """
 
 def evaluate(test_nodes,raw_features,labels, USTGCN, regression, device,test_loss):
-
-
-    models = [USTGCN, regression]
-
-    params = []
-    for model in models:
-        for param in model.parameters():
-            if param.requires_grad:
-                param.requires_grad = False
-                params.append(param)
-
-    
-    val_nodes = test_nodes
-    embs = USTGCN(raw_features,False)
-    predicts = regression(embs)
-    loss_sup = torch.nn.MSELoss()(predicts, labels)
-    loss_sup /= len(val_nodes)
-    test_loss += loss_sup.item()
-
-    for param in params:
-        param.requires_grad = True
+    USTGCN.eval()
+    regression.eval()
+    with torch.no_grad():
+      val_nodes = test_nodes
+      embs = USTGCN(raw_features,False)
+      predicts = regression(embs)
+      loss_sup = torch.nn.MSELoss()(predicts, labels)
+      loss_sup /= len(val_nodes)
+      test_loss += loss_sup.item()
 
     return predicts,test_loss
 
@@ -183,7 +171,8 @@ def mean_absolute_percentage_error(y_true, y_pred):
   y_true = np.asarray(y_true)
   y_pred = np.asarray(y_pred)
 
-  return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+  eps = 1e-5
+  return np.mean(np.abs((y_true - y_pred) / (np.abs(y_true) + eps))) * 100
 
 """# Downstream Task"""
 
@@ -278,7 +267,7 @@ class TrafficModel:
     def __init__(self, train_data,train_label,test_data,test_label,adj, 
                  config, ds, input_size, out_size,GNN_layers,
                 epochs, device,num_timestamps, pred_len,save_flag,PATH,t_debug,b_debug,
-                gat_heads,gat_dropout,start_epoch):
+                gat_heads,gat_dropout,start_epoch,learning_rate,weight_decay):
       
       super(TrafficModel, self).__init__()
       
@@ -299,6 +288,8 @@ class TrafficModel:
       self.pred_len = pred_len
       self.gat_heads = gat_heads
       self.gat_dropout = gat_dropout
+      self.learning_rate = learning_rate
+      self.weight_decay = weight_decay
 
       self.node_bsz = 512
       self.PATH = PATH
@@ -329,12 +320,18 @@ class TrafficModel:
       min_MAE = float("Inf") 
       min_MAPE = float("Inf")
       best_test = float("Inf")
-      
 
-      lr = 0.001
+      params = list(timeStampModel.parameters()) + list(regression.parameters())
+      optimizer = torch.optim.AdamW(params, lr=self.learning_rate, weight_decay=self.weight_decay)
+      t_max = max(1, self.epochs - self.start_epoch + 1)
+      scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=t_max, eta_min=self.learning_rate * 0.1
+      )
         
       for epoch in range(self.start_epoch, self.epochs + 1):
         train_loss = torch.tensor(0.).to(self.device)
+        timeStampModel.train()
+        regression.train()
 
         print("Epoch: ",epoch," running...")
 
@@ -348,17 +345,15 @@ class TrafficModel:
           tr_data = self.train_data[data_timestamp]
           tr_label = self.train_label[data_timestamp]
 
-          timeStampModel, regression, train_loss = apply_model(self.all_nodes,timeStampModel, 
-          regression,self.node_bsz, self.device,tr_data,tr_label,train_loss,lr,self.pred_len)
+          timeStampModel, regression, train_loss = apply_model(
+            timeStampModel, regression, optimizer, self.device, tr_data, tr_label, train_loss
+          )
 
           if self.b_debug:
             break
 
         train_loss /= len(idx)
-        if epoch<= 24 and epoch%8==0:
-          lr *= 0.5
-        else:
-          lr = 0.0001
+        scheduler.step()
 
 
         print("Train avg loss: ",train_loss)
@@ -605,49 +600,19 @@ class CombinedGAT(nn.Module):
 
 """# Applying Model"""
 
-def apply_model(train_nodes, encoder_model, regression, 
-                node_batch_sz, device,train_data,train_label,avg_loss,lr,pred_len):
+def apply_model(encoder_model, regression, optimizer, device,train_data,train_label,avg_loss):
 
 
     models = [encoder_model, regression]
-    params = []
-    for model in models:
-      for param in model.parameters():
-          if param.requires_grad:
-              params.append(param)
-
-
-
-    optimizer = torch.optim.Adam(params, lr=lr, weight_decay=0)
 
     optimizer.zero_grad()  # set gradients in zero...
     for model in models:
       model.zero_grad()  # set gradients in zero
 
-    node_batches = math.ceil(len(train_nodes) / node_batch_sz)
-
-    loss = torch.tensor(0.).to(device)
-    #window slide
-    raw_features = train_data
-    labels = train_label
-    for index in range(node_batches):
-
-      nodes_batch = train_nodes[index * node_batch_sz:(index + 1) * node_batch_sz]
-      nodes_batch = nodes_batch.view(nodes_batch.shape[0],1)
-      labels_batch = labels[nodes_batch]      
-      labels_batch = labels_batch.view(len(labels_batch),pred_len)
-      embs_batch = encoder_model(raw_features,True)
-      embs_batch = embs_batch[nodes_batch.squeeze(1)]
-
-      logists = regression(embs_batch)
-
-
-      loss_sup = torch.nn.MSELoss()(logists, labels_batch)
-
-      loss_sup /= len(nodes_batch)
-      loss += loss_sup
-
-
+    embs = encoder_model(train_data,True)
+    logists = regression(embs)
+    loss = torch.nn.MSELoss()(logists, train_label)
+    loss /= len(train_label)
 
     avg_loss += loss.item()
 
@@ -681,6 +646,8 @@ parser.add_argument('--save_model', action='store_true')
 parser.add_argument('--input_size', type=int, default=8)
 parser.add_argument('--gat_heads', type=int, default=4)
 parser.add_argument('--gat_dropout', type=float, default=0.3)
+parser.add_argument('--learning_rate', type=float, default=1e-3)
+parser.add_argument('--weight_decay', type=float, default=1e-4)
 args = parser.parse_args()
 
 if args.start_epoch > args.epochs:
@@ -721,6 +688,8 @@ epochs = args.epochs
 start_epoch = args.start_epoch
 gat_heads = args.gat_heads
 gat_dropout = args.gat_dropout
+learning_rate = args.learning_rate
+weight_decay = args.weight_decay
 
 
 save_flag = args.save_model
@@ -728,7 +697,7 @@ t_debug = False
 b_debug = False
 hModel = TrafficModel(train_data,train_label,test_data,test_label,adj,config, ds, input_size, 
                        out_size,GNN_layers,epochs, device,num_timestamps,pred_len,save_flag,
-                       PATH,t_debug,b_debug,gat_heads,gat_dropout,start_epoch)
+                       PATH,t_debug,b_debug,gat_heads,gat_dropout,start_epoch,learning_rate,weight_decay)
 
 
 if not args.trained_model: #train model and evaluate
