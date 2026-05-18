@@ -193,8 +193,7 @@ class Regression(nn.Module):
         super(Regression, self).__init__()
 
         self.layer = nn.Sequential(nn.Linear(emb_size, emb_size),
-                                nn.LeakyReLU(0.2),
-                                nn.Dropout(0.3),
+                                nn.ReLU(),
                                 nn.Linear(emb_size, out_size),
                                 nn.ReLU()
                                 )
@@ -477,10 +476,8 @@ class SPTempGNN(nn.Module):
     his_temporal = torch.mm(self.sp_temp,his_temporal)
 
     his_combined = torch.cat([his_self,his_temporal], dim=1)
-    his_raw_features = F.leaky_relu(his_combined.mm(self.his_final_weight), 0.2)
-    
-    # Implementing a Residual Connection to prevent over-smoothing
-    his_raw_features = his_raw_features + his_self
+    his_raw_features =F.relu(his_combined.mm(self.his_final_weight))
+
 
     return his_raw_features
 
@@ -576,8 +573,8 @@ class CombinedGNN(nn.Module):
 
 
       final_embds = his_final_embds
-      final_embds = F.leaky_relu(self.final_weight.mm(final_embds.t()).t(), 0.2)
-      final_embds = F.dropout(final_embds, p=0.3, training=isTrain)
+      final_embds = F.relu(self.final_weight.mm(final_embds.t()).t())
+
 
 
       return final_embds

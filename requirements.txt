@@ -3,7 +3,7 @@ Pillow
 pyparsing
 scipy
 six
-sklearn
+scikit-learn
 torch
 torchvision
 matplotlib

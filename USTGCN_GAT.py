@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-*Model: USTGCN_Same_Time_Zone*
+*Model: USTGCN_GAT_Same_Time_Zone*
 
 # Packages
 """
@@ -50,7 +50,7 @@ class DataCenter(object):
 
   
 
-    def load_data(self,ds,st_day,en_day,hr_sample,day,pred_len):
+    def load_data(self,ds,st_day,en_day,hr_sample,day,pred_len,num_timestamps):
 
       content_file = self.config['file_path.' + ds + '_content']
 
@@ -88,10 +88,10 @@ class DataCenter(object):
         for st in range(st_point, en_point):
           a_data = []
           
-          if st + 12 + ((day-1)*timestamp) + pred_len == tot_ts:
+          if st + num_timestamps + ((day-1)*timestamp) + pred_len > tot_ts:
             break
 
-          for it in range(st,st+12):
+          for it in range(st,st+num_timestamps):
             his = timestamp_data[:,(it+pred_len): it+pred_len+((day-1)*timestamp) :timestamp]
             cur = timestamp_data[:,it + (day-1)*timestamp].reshape(tot_node,1)
             a = np.concatenate((his,cur),axis=1).reshape(1,tot_node,day)
@@ -101,7 +101,7 @@ class DataCenter(object):
           
           pred_data = []
           for pred in range(pred_len):
-            gt = timestamp_data[:,st + 12 + ((day-1)*timestamp) + pred].reshape(tot_node,1)
+            gt = timestamp_data[:,st + num_timestamps + ((day-1)*timestamp) + pred].reshape(tot_node,1)
             pred_data.append(gt)
           
           pred_data = np.concatenate(pred_data,axis =1)
@@ -215,7 +215,7 @@ class Regression(nn.Module):
 
 class DataLoader:
 
-  def __init__(self, config,ds,pred_len):
+  def __init__(self, config,ds,pred_len,num_timestamps):
     
     super(DataLoader, self).__init__()
 
@@ -251,11 +251,16 @@ class DataLoader:
     self.hr_sample = 12
     self.day = 8
     self.pred_len = pred_len
+    self.num_timestamps = num_timestamps
     
   def load_data(self):
     print("Loading Data...")
-    train_data,train_label = self.dataCenter.load_data(self.ds,self.train_st,self.train_en,self.hr_sample,self.day,self.pred_len)
-    test_data,test_label = self.dataCenter.load_data(self.ds,self.test_st,self.test_en,self.hr_sample,self.day,self.pred_len)
+    train_data,train_label = self.dataCenter.load_data(
+      self.ds,self.train_st,self.train_en,self.hr_sample,self.day,self.pred_len,self.num_timestamps
+    )
+    test_data,test_label = self.dataCenter.load_data(
+      self.ds,self.test_st,self.test_en,self.hr_sample,self.day,self.pred_len,self.num_timestamps
+    )
     adj = self.dataCenter.load_adj(self.ds)
     print("Data Loaded")
     print("Dataset: ", self.ds)
@@ -272,7 +277,8 @@ class TrafficModel:
 
     def __init__(self, train_data,train_label,test_data,test_label,adj, 
                  config, ds, input_size, out_size,GNN_layers,
-                epochs, device,num_timestamps, pred_len,save_flag,PATH,t_debug,b_debug):
+                epochs, device,num_timestamps, pred_len,save_flag,PATH,t_debug,b_debug,
+                gat_heads,gat_dropout,start_epoch):
       
       super(TrafficModel, self).__init__()
       
@@ -287,18 +293,21 @@ class TrafficModel:
       self.day = input_size 
       self.device = device
       self.epochs = epochs
+      self.start_epoch = start_epoch
       self.regression = Regression(input_size * num_timestamps, pred_len)
       self.num_timestamps = num_timestamps
       self.pred_len = pred_len
+      self.gat_heads = gat_heads
+      self.gat_dropout = gat_dropout
 
       self.node_bsz = 512
       self.PATH = PATH
       self.save_flag = save_flag
 
-      self.train_data = torch.FloatTensor(self.train_data).to(device)
-      self.test_data = torch.FloatTensor(self.test_data).to(device)
-      self.train_label = torch.FloatTensor(self.train_label).to(device)
-      self.test_label = torch.FloatTensor(self.test_label).to(device)
+      self.train_data = torch.from_numpy(np.asarray(self.train_data, dtype=np.float32)).to(device)
+      self.test_data = torch.from_numpy(np.asarray(self.test_data, dtype=np.float32)).to(device)
+      self.train_label = torch.from_numpy(np.asarray(self.train_label, dtype=np.float32)).to(device)
+      self.test_label = torch.from_numpy(np.asarray(self.test_label, dtype=np.float32)).to(device)
       self.all_nodes = torch.LongTensor(self.all_nodes).to(device)
       self.adj = torch.FloatTensor(self.adj).to(device)
       
@@ -309,8 +318,8 @@ class TrafficModel:
     def run_model(self):
 
 
-      timeStampModel = CombinedGNN(self.input_size,self.out_size,self.adj, 
-      self.device,1,self.GNN_layers,self.num_timestamps,self.day)
+      timeStampModel = CombinedGAT(self.input_size,self.out_size,self.adj,
+      self.device,1,self.GNN_layers,self.num_timestamps,self.day,self.gat_heads,self.gat_dropout)
       timeStampModel.to(self.device)
 
       regression = self.regression
@@ -324,8 +333,8 @@ class TrafficModel:
 
       lr = 0.001
         
-      train_loss = torch.tensor(0.).to(self.device)  
-      for epoch in range(1,epochs):
+      for epoch in range(self.start_epoch, self.epochs + 1):
+        train_loss = torch.tensor(0.).to(self.device)
 
         print("Epoch: ",epoch," running...")
 
@@ -340,7 +349,7 @@ class TrafficModel:
           tr_label = self.train_label[data_timestamp]
 
           timeStampModel, regression, train_loss = apply_model(self.all_nodes,timeStampModel, 
-          regression,self.node_bsz, self.device,tr_data,tr_label,train_loss,lr)
+          regression,self.node_bsz, self.device,tr_data,tr_label,train_loss,lr,self.pred_len)
 
           if self.b_debug:
             break
@@ -455,43 +464,53 @@ class TrafficModel:
       print("MAPE: ", MAPE)
       print("===============================================")
 
-"""# Spatio-Temporal GNN"""
+"""# Spatio-Temporal GAT"""
 
-class SPTempGNN(nn.Module):
-  def __init__(self,D_temporal,A_temporal,num_timestamps,out_size,tot_nodes):
-    super(SPTempGNN, self).__init__()
-    
-    self.tot_nodes = tot_nodes
-    self.sp_temp = torch.mm(D_temporal,torch.mm(A_temporal,D_temporal))
+class SPTempGAT(nn.Module):
+  def __init__(self, in_features, out_features, num_heads=4, dropout=0.3, alpha=0.2):
+    super(SPTempGAT, self).__init__()
+    if out_features % num_heads != 0:
+      raise ValueError("out_features must be divisible by num_heads for multi-head GAT.")
 
-    
+    self.num_heads = num_heads
+    self.head_dim = out_features // num_heads
+    self.dropout = dropout
+    self.W = nn.Parameter(torch.FloatTensor(num_heads, in_features, self.head_dim))
+    self.a = nn.Parameter(torch.FloatTensor(num_heads, 2 * self.head_dim, 1))
+    self.out_proj = nn.Linear(out_features, out_features, bias=False)
+    self.leakyrelu = nn.LeakyReLU(alpha)
 
-    self.his_temporal_weight = nn.Parameter(torch.FloatTensor(num_timestamps,out_size))
+  def forward(self, features, adj_mask, is_train):
+    n_nodes = features.shape[0]
+    head_outputs = []
 
-    self.his_final_weight = nn.Parameter(torch.FloatTensor(2*(out_size),out_size))
+    for head in range(self.num_heads):
+      h = torch.mm(features, self.W[head])
+      h_i = h.repeat_interleave(n_nodes, dim=0)
+      h_j = h.repeat(n_nodes, 1)
+      e = self.leakyrelu(
+        torch.matmul(torch.cat([h_i, h_j], dim=1), self.a[head])
+      ).view(n_nodes, n_nodes)
 
-  
-  def forward(self,his_raw_features):
-    his_self = his_raw_features
-    his_temporal = self.his_temporal_weight.repeat(self.tot_nodes,1) * his_raw_features
-    his_temporal = torch.mm(self.sp_temp,his_temporal)
+      zero_vec = torch.full_like(e, -9e15)
+      attention = torch.where(adj_mask > 0, e, zero_vec)
+      attention = F.softmax(attention, dim=1)
+      attention = F.dropout(attention, p=self.dropout, training=is_train)
+      head_outputs.append(torch.mm(attention, h))
 
-    his_combined = torch.cat([his_self,his_temporal], dim=1)
-    his_raw_features = F.leaky_relu(his_combined.mm(self.his_final_weight), 0.2)
-    
-    # Implementing a Residual Connection to prevent over-smoothing
-    his_raw_features = his_raw_features + his_self
+    out = torch.cat(head_outputs, dim=1)
+    out = self.out_proj(out)
+    if out.shape == features.shape:
+      out = out + features
 
-    return his_raw_features
+    return F.elu(out)
 
-"""# Combined GraphSAGE
+"""# Combined Graph Attention Network"""
 
-"""
-
-class CombinedGNN(nn.Module):
+class CombinedGAT(nn.Module):
     def __init__(self,input_size,out_size, adj_lists,
-                 device,st,GNN_layers,num_timestamps,day):
-        super(CombinedGNN, self).__init__()
+                 device,st,GNN_layers,num_timestamps,day,gat_heads,gat_dropout):
+        super(CombinedGAT, self).__init__()
 
         self.st = st
         self.num_timestamps = num_timestamps
@@ -500,6 +519,8 @@ class CombinedGNN(nn.Module):
         self.device = device
         self.adj_lists = adj_lists 
         self.GNN_layers = GNN_layers
+        self.gat_heads = gat_heads
+        self.gat_dropout = gat_dropout
 
         
         self.day = day
@@ -512,7 +533,6 @@ class CombinedGNN(nn.Module):
         dim = self.num_timestamps*self.tot_nodes
 
         A_temporal = torch.zeros(dim,dim).to(device)
-        D_temporal = torch.zeros(dim,dim).to(device)
         identity = torch.eye(self.tot_nodes).to(device)
 
         for i in range(0, self.num_timestamps):
@@ -523,18 +543,19 @@ class CombinedGNN(nn.Module):
             col_st = j*self.tot_nodes
             col_en = col_st + self.tot_nodes
 
-            if i == j: #adj matrix  
+            if i == j: #adj matrix
               A_temporal[row_st:row_en,col_st:col_en] = A 
             else: #identity matrix
               A_temporal[row_st:row_en,col_st:col_en] = identity + A
-        
-        row_sum = torch.sum(A_temporal,0)
 
-        for i in range(dim):
-          D_temporal[i,i] = 1/max(torch.sqrt(row_sum[i]),1)      
-        
+        A_temporal = (A_temporal > 0).float()
+        A_temporal = torch.clamp(A_temporal + torch.eye(dim).to(device), max=1.0)
+        self.register_buffer("temporal_adj_mask", A_temporal)
+
         for i in range(GNN_layers):
-          sp_temp = SPTempGNN(D_temporal,A_temporal,num_timestamps,out_size,self.tot_nodes)
+          sp_temp = SPTempGAT(
+            out_size, out_size, num_heads=self.gat_heads, dropout=self.gat_dropout, alpha=0.2
+          )
           setattr(self, 'sp_temp_layer'+str(i), sp_temp)
           
 
@@ -562,7 +583,7 @@ class CombinedGNN(nn.Module):
       
       for i in range(self.GNN_layers):
         sp_temp = getattr(self, 'sp_temp_layer'+str(i))
-        his_raw_features = sp_temp(his_raw_features)
+        his_raw_features = sp_temp(his_raw_features, self.temporal_adj_mask, isTrain)
         
       
       his_list = []
@@ -584,11 +605,11 @@ class CombinedGNN(nn.Module):
 
 """# Applying Model"""
 
-def apply_model(train_nodes, CombinedGNN, regression, 
-                node_batch_sz, device,train_data,train_label,avg_loss,lr):
+def apply_model(train_nodes, encoder_model, regression, 
+                node_batch_sz, device,train_data,train_label,avg_loss,lr,pred_len):
 
 
-    models = [CombinedGNN, regression]
+    models = [encoder_model, regression]
     params = []
     for model in models:
       for param in model.parameters():
@@ -615,7 +636,8 @@ def apply_model(train_nodes, CombinedGNN, regression,
       nodes_batch = nodes_batch.view(nodes_batch.shape[0],1)
       labels_batch = labels[nodes_batch]      
       labels_batch = labels_batch.view(len(labels_batch),pred_len)
-      embs_batch = CombinedGNN(raw_features,True)  # Finds embeddings for all the ndoes in nodes_batch
+      embs_batch = encoder_model(raw_features,True)
+      embs_batch = embs_batch[nodes_batch.squeeze(1)]
 
       logists = regression(embs_batch)
 
@@ -638,7 +660,7 @@ def apply_model(train_nodes, CombinedGNN, regression,
     for model in models:
       model.zero_grad()
 
-    return CombinedGNN, regression,avg_loss
+    return encoder_model, regression,avg_loss
 
 """#Training"""
 
@@ -651,12 +673,18 @@ parser.add_argument('--GNN_layers', type=int, default=3)
 parser.add_argument('--num_timestamps', type=int, default=12)
 parser.add_argument('--pred_len', type=int, default=3)
 parser.add_argument('--epochs', type=int, default=500)
+parser.add_argument('--start_epoch', type=int, default=1)
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--cuda', action='store_true',help='use CUDA')
 parser.add_argument('--trained_model', action='store_true')
 parser.add_argument('--save_model', action='store_true')
 parser.add_argument('--input_size', type=int, default=8)
+parser.add_argument('--gat_heads', type=int, default=4)
+parser.add_argument('--gat_dropout', type=float, default=0.3)
 args = parser.parse_args()
+
+if args.start_epoch > args.epochs:
+  raise ValueError("--start_epoch must be less than or equal to --epochs")
 
 
 
@@ -682,14 +710,17 @@ config_file = PATH + "experiments.conf"
 config = pyhocon.ConfigFactory.parse_file(config_file)
 ds = args.dataset
 pred_len = args.pred_len
-data_loader = DataLoader(config,ds,pred_len)
+num_timestamps = args.num_timestamps
+data_loader = DataLoader(config,ds,pred_len,num_timestamps)
 train_data,train_label,test_data,test_label,adj = data_loader.load_data()
 
-num_timestamps = args.num_timestamps
 GNN_layers = args.GNN_layers
 input_size = args.input_size
 out_size = args.input_size
 epochs = args.epochs
+start_epoch = args.start_epoch
+gat_heads = args.gat_heads
+gat_dropout = args.gat_dropout
 
 
 save_flag = args.save_model
@@ -697,11 +728,11 @@ t_debug = False
 b_debug = False
 hModel = TrafficModel(train_data,train_label,test_data,test_label,adj,config, ds, input_size, 
                        out_size,GNN_layers,epochs, device,num_timestamps,pred_len,save_flag,
-                       PATH,t_debug,b_debug)
+                       PATH,t_debug,b_debug,gat_heads,gat_dropout,start_epoch)
 
 
 if not args.trained_model: #train model and evaluate
-  print("Running Trained Model...")
+  print("Training Model...")
   hModel.run_model()
 else:
   print("Running Trained Model...")
